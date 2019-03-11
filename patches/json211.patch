@@ -1,0 +1,366 @@
+diff --git a/src/Entity/JsonapiResourceConfig.php b/src/Entity/JsonapiResourceConfig.php
+index c2c0f27..e12d8dc 100644
+--- a/src/Entity/JsonapiResourceConfig.php
++++ b/src/Entity/JsonapiResourceConfig.php
+@@ -48,27 +48,6 @@ class JsonapiResourceConfig extends ConfigEntityBase {
+    */
+   protected $id;
+ 
+-  /**
+-   * The path for the resource.
+-   *
+-   * @var string
+-   */
+-  protected $path;
+-
+-  /**
+-   * The type for the resource.
+-   *
+-   * @var string
+-   */
+-  protected $resourceType;
+-
+-  /**
+-   * Resource fields.
+-   *
+-   * @var array
+-   */
+-  protected $resourceFields = [];
+-
+   /**
+    * {@inheritdoc}
+    */
+diff --git a/src/Form/JsonapiResourceConfigForm.php b/src/Form/JsonapiResourceConfigForm.php
+index e9fc12c..90d716b 100644
+--- a/src/Form/JsonapiResourceConfigForm.php
++++ b/src/Form/JsonapiResourceConfigForm.php
+@@ -161,10 +161,7 @@ class JsonapiResourceConfigForm extends EntityForm {
+         return $form;
+       }
+       $form['bundle_wrapper']['fields_wrapper'] = $this->buildOverridesForm($resource_type, $entity);
+-      $form['id'] = [
+-        '#type' => 'hidden',
+-        '#value' => sprintf('%s--%s', $entity_type_id, $bundle),
+-      ];
++      $form['id'] = ['#type' => 'hidden', '#value' => $resource_config_id];
+     }
+ 
+     return $form;
+@@ -318,7 +315,7 @@ class JsonapiResourceConfigForm extends EntityForm {
+         'disabled' => $this->t('Disabled'),
+         'fieldName' => $this->t('Field name'),
+         'publicName' => $this->t('Alias'),
+-        'advancedOptions' => $this->t(''),
++        'advancedOptions' => '',
+       ],
+       '#empty' => $this->t('No fields available.'),
+       '#states' => [
+@@ -328,7 +325,7 @@ class JsonapiResourceConfigForm extends EntityForm {
+       ],
+       '#attached' => [
+         'library' => [
+-            'jsonapi_extras/expandable_rows_table',
++          'jsonapi_extras/expandable_rows_table',
+         ],
+       ],
+     ];
+@@ -368,7 +365,8 @@ class JsonapiResourceConfigForm extends EntityForm {
+    *   The partial form.
+    */
+   protected function buildOverridesField($field_name, JsonapiResourceConfig $entity) {
+-    $resource_fields = array_filter($entity->get('resourceFields'), function (array $resource_field) use ($field_name) {
++    $rfs = $entity->get('resourceFields') ?: [];
++    $resource_fields = array_filter($rfs, function (array $resource_field) use ($field_name) {
+       return $resource_field['fieldName'] == $field_name;
+     });
+     $resource_field = array_shift($resource_fields);
+@@ -403,7 +401,7 @@ class JsonapiResourceConfigForm extends EntityForm {
+ 
+     $overrides_form['advancedOptionsIcon'] = [
+       // Here we are just printing an arrow.
+-      '#markup' => '&#x21B3;'
++      '#markup' => '&#x21B3;',
+     ];
+ 
+     $overrides_form['enhancer_label'] = [
+@@ -480,7 +478,8 @@ class JsonapiResourceConfigForm extends EntityForm {
+    * {@inheritdoc}
+    */
+   protected function actionsElement(array $form, FormStateInterface $form_state) {
+-    // We want to display "Revert" instead of "Delete" on the Resource Config Form.
++    // We want to display "Revert" instead of "Delete" on the Resource Config
++    // Form.
+     $element = parent::actionsElement($form, $form_state);
+     if (isset($element['delete'])) {
+       $element['delete']['#title'] = $this->t('Revert');
+diff --git a/src/JsonapiResourceConfigListBuilder.php b/src/JsonapiResourceConfigListBuilder.php
+index 48476de..5ad21b3 100644
+--- a/src/JsonapiResourceConfigListBuilder.php
++++ b/src/JsonapiResourceConfigListBuilder.php
+@@ -8,6 +8,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
+ use Drupal\Core\Entity\EntityTypeInterface;
+ use Drupal\Core\Url;
+ use Drupal\jsonapi_extras\ResourceType\ConfigurableResourceTypeRepository;
++use Drupal\jsonapi_extras\ResourceType\NullJsonapiResourceConfig;
+ use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+@@ -192,7 +193,7 @@ class JsonapiResourceConfigListBuilder extends ConfigEntityListBuilder {
+ 
+       /** @var \Drupal\jsonapi_extras\Entity\JsonapiResourceConfig $resource_config */
+       $resource_config = $resource_type->getJsonapiResourceConfig();
+-      if ($resource_config->id()) {
++      if (!$resource_config instanceof NullJsonapiResourceConfig) {
+         $row['state']['#value'] = $this->t('Overwritten');
+         $row['state']['#attributes']['class'][] = 'label--overwritten';
+         $row['operations']['#links'] = $this->getDefaultOperations($resource_config);
+diff --git a/src/Normalizer/EntityNormalizerTrait.php b/src/Normalizer/EntityNormalizerTrait.php
+index 141a6f2..84a11d6 100644
+--- a/src/Normalizer/EntityNormalizerTrait.php
++++ b/src/Normalizer/EntityNormalizerTrait.php
+@@ -39,10 +39,10 @@ trait EntityNormalizerTrait {
+     // Translate the public fields into the entity fields.
+     foreach ($data as $public_field_name => $field_value) {
+       // Skip any disabled field.
+-      if (!$resource_type->isFieldEnabled($public_field_name)) {
++      $internal_name = $resource_type->getInternalName($public_field_name);
++      if (!$resource_type->isFieldEnabled($internal_name)) {
+         continue;
+       }
+-      $internal_name = $resource_type->getInternalName($public_field_name);
+       $enhancer = $resource_type->getFieldEnhancer($public_field_name, 'publicName');
+ 
+       if (isset($field_storage_definitions[$internal_name])) {
+@@ -70,7 +70,7 @@ trait EntityNormalizerTrait {
+       $data_internal[$internal_name] = $field_value;
+     }
+ 
+-    return $data_internal;
++    return parent::prepareInput($data_internal, $resource_type, $format, $context);
+   }
+ 
+   /**
+diff --git a/src/Normalizer/FieldItemNormalizer.php b/src/Normalizer/FieldItemNormalizer.php
+index 13ad626..a5fdc53 100644
+--- a/src/Normalizer/FieldItemNormalizer.php
++++ b/src/Normalizer/FieldItemNormalizer.php
+@@ -9,12 +9,13 @@ use Drupal\jsonapi\Normalizer\NormalizerBase;
+ use Drupal\jsonapi\Normalizer\FieldItemNormalizer as JsonapiFieldItemNormalizer;
+ use Drupal\jsonapi\Normalizer\Value\FieldItemNormalizerValue;
+ use Drupal\jsonapi_extras\Plugin\ResourceFieldEnhancerManager;
++use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+ use Symfony\Component\Serializer\SerializerInterface;
+ 
+ /**
+  * Converts the Drupal field structure to a JSON API array structure.
+  */
+-class FieldItemNormalizer extends NormalizerBase {
++class FieldItemNormalizer extends NormalizerBase implements DenormalizerInterface {
+ 
+   /**
+    * The interface or class that this Normalizer supports.
+@@ -80,6 +81,13 @@ class FieldItemNormalizer extends NormalizerBase {
+     return $normalized_output;
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function denormalize($data, $class, $format = NULL, array $context = []) {
++    return $this->subject->denormalize($data, $class, $format, $context);
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+diff --git a/src/ResourceType/ConfigurableResourceTypeRepository.php b/src/ResourceType/ConfigurableResourceTypeRepository.php
+index 8baf8e6..3b35dbf 100644
+--- a/src/ResourceType/ConfigurableResourceTypeRepository.php
++++ b/src/ResourceType/ConfigurableResourceTypeRepository.php
+@@ -215,14 +215,18 @@ class ConfigurableResourceTypeRepository extends ResourceTypeRepository {
+    *   The configuration entity for the resource type.
+    */
+   protected function getResourceConfig($resource_config_id) {
++    $null_resource = new NullJsonapiResourceConfig(
++      ['id' => $resource_config_id],
++      'jsonapi_resource_config'
++    );
+     try {
+       $resource_configs = $this->getResourceConfigs();
+       return isset($resource_configs[$resource_config_id]) ?
+         $resource_configs[$resource_config_id] :
+-        new NullJsonapiResourceConfig([], '');
++        $null_resource;
+     }
+     catch (PluginException $e) {
+-      return new NullJsonapiResourceConfig([], '');
++      return $null_resource;
+     }
+   }
+ 
+diff --git a/src/ResourceType/NullJsonapiResourceConfig.php b/src/ResourceType/NullJsonapiResourceConfig.php
+index 3a51dbf..a5b8f82 100644
+--- a/src/ResourceType/NullJsonapiResourceConfig.php
++++ b/src/ResourceType/NullJsonapiResourceConfig.php
+@@ -23,11 +23,4 @@ class NullJsonapiResourceConfig extends JsonapiResourceConfig {
+     return __CLASS__;
+   }
+ 
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function getEntityType() {
+-    return NULL;
+-  }
+-
+ }
+diff --git a/tests/src/Functional/JsonExtrasApiFunctionalTest.php b/tests/src/Functional/JsonExtrasApiFunctionalTest.php
+index 4341117..e286ebf 100644
+--- a/tests/src/Functional/JsonExtrasApiFunctionalTest.php
++++ b/tests/src/Functional/JsonExtrasApiFunctionalTest.php
+@@ -76,7 +76,11 @@ class JsonExtrasApiFunctionalTest extends JsonApiFunctionalTestBase {
+     static::overrideResources();
+     $this->resetAll();
+     $role = $this->user->get('roles')[0]->entity;
+-    $this->grantPermissions($role, ['administer nodes', 'administer site configuration']);
++    $this->grantPermissions($role, [
++      'administer nodes',
++      'administer site configuration',
++      'access user profiles',
++    ]);
+   }
+ 
+   /**
+@@ -264,7 +268,7 @@ class JsonExtrasApiFunctionalTest extends JsonApiFunctionalTestBase {
+     ];
+     $response = $this->request('POST', $collection_url, [
+       'body' => Json::encode($body),
+-      'auth' => [$this->user->getUsername(), $this->user->pass_raw],
++      'auth' => [$this->user->getAccountName(), $this->user->pass_raw],
+       'headers' => ['Content-Type' => 'application/vnd.api+json'],
+     ]);
+     $created_response = Json::decode((string) $response->getBody());
+@@ -291,7 +295,7 @@ class JsonExtrasApiFunctionalTest extends JsonApiFunctionalTestBase {
+     ];
+     $response = $this->request('POST', $relationships_url, [
+       'body' => Json::encode($body),
+-      'auth' => [$this->user->getUsername(), $this->user->pass_raw],
++      'auth' => [$this->user->getAccountName(), $this->user->pass_raw],
+       'headers' => ['Content-Type' => 'application/vnd.api+json'],
+     ]);
+     $created_response = Json::decode((string) $response->getBody());
+@@ -302,12 +306,13 @@ class JsonExtrasApiFunctionalTest extends JsonApiFunctionalTestBase {
+    * Creates the JSON API Resource Config entities to override the resources.
+    */
+   protected static function overrideResources() {
+-    // Disable the user resource.
++    // Disable the taxonomy_vocabulary resource.
+     JsonapiResourceConfig::create([
+       'id' => 'taxonomy_vocabulary--taxonomy_vocabulary',
+       'disabled' => TRUE,
+       'path' => 'taxonomy_vocabulary/taxonomy_vocabulary',
+       'resourceType' => 'taxonomy_vocabulary--taxonomy_vocabulary',
++      'resourceFields' => [],
+     ])->save();
+     // Override paths and fields in the articles resource.
+     JsonapiResourceConfig::create([
+diff --git a/tests/src/Kernel/Controller/EntityResourceTest.php b/tests/src/Kernel/Controller/EntityResourceTest.php
+index 44c18cd..3ccc4d2 100644
+--- a/tests/src/Kernel/Controller/EntityResourceTest.php
++++ b/tests/src/Kernel/Controller/EntityResourceTest.php
+@@ -75,7 +75,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('jsonapi.resource_type.repository'),
+         $this->container->get('renderer'),
+         $this->container->get('entity.repository'),
+-        $this->container->get('jsonapi.include_resolver')
++        $this->container->get('jsonapi.include_resolver'),
++        $this->container->get('renderer')
+       );
+       $response = $entity_resource->createIndividual($resource_type, $node_type, new Request());
+     }
+@@ -86,7 +87,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('entity_field.manager'),
+         $this->container->get('plugin.manager.field.field_type'),
+         $this->container->get('jsonapi.link_manager'),
+-        $this->container->get('jsonapi.resource_type.repository')
++        $this->container->get('jsonapi.resource_type.repository'),
++        $this->container->get('renderer')
+       );
+       $response = $entity_resource->createIndividual($node_type, new Request());
+     }
+@@ -141,7 +143,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('jsonapi.resource_type.repository'),
+         $this->container->get('renderer'),
+         $this->container->get('entity.repository'),
+-        $this->container->get('jsonapi.include_resolver')
++        $this->container->get('jsonapi.include_resolver'),
++        $this->container->get('renderer')
+       );
+       $response = $entity_resource->patchIndividual($resource_type, $node_type, $parsed_node_type, $request);
+     }
+@@ -152,7 +155,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('entity_field.manager'),
+         $this->container->get('plugin.manager.field.field_type'),
+         $this->container->get('jsonapi.link_manager'),
+-        $this->container->get('jsonapi.resource_type.repository')
++        $this->container->get('jsonapi.resource_type.repository'),
++        $this->container->get('renderer')
+       );
+       $response = $entity_resource->patchIndividual($node_type, $parsed_node_type, $request);
+     }
+@@ -233,7 +237,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('jsonapi.resource_type.repository'),
+         $this->container->get('renderer'),
+         $this->container->get('entity.repository'),
+-        $this->container->get('jsonapi.include_resolver')
++        $this->container->get('jsonapi.include_resolver'),
++        $this->container->get('renderer')
+       );
+ 
+     }
+@@ -244,7 +249,8 @@ class EntityResourceTest extends KernelTestBase {
+         $this->container->get('entity_field.manager'),
+         $this->container->get('plugin.manager.field.field_type'),
+         $this->container->get('jsonapi.link_manager'),
+-        $this->container->get('jsonapi.resource_type.repository')
++        $this->container->get('jsonapi.resource_type.repository'),
++        $this->container->get('renderer')
+       );
+     }
+     $response = $entity_resource->deleteIndividual($node_type, new Request());
+diff --git a/tests/src/Kernel/EntityToJsonApiTest.php b/tests/src/Kernel/EntityToJsonApiTest.php
+index 673054c..a57d4f8 100644
+--- a/tests/src/Kernel/EntityToJsonApiTest.php
++++ b/tests/src/Kernel/EntityToJsonApiTest.php
+@@ -172,6 +172,9 @@ class EntityToJsonApiTest extends JsonapiKernelTestBase {
+    * @covers ::normalize
+    */
+   public function testSerialize() {
++    $tid_public_name = ConfigurableResourceTypeRepository::isJsonApi2x()
++      ? 'drupal_internal__tid'
++      : 'tid';
+     $entities = [
+       [
+         $this->node,
+@@ -179,17 +182,17 @@ class EntityToJsonApiTest extends JsonapiKernelTestBase {
+         [
+           [
+             'type' => 'taxonomy_term--tags',
++            'id' => $this->term1->uuid(),
+             'attributes' => [
+-              'tid' => (int) $this->term1->id(),
+-              'uuid' => $this->term1->uuid(),
++              $tid_public_name => (int) $this->term1->id(),
+               'name' => $this->term1->label(),
+             ],
+           ],
+           [
+             'type' => 'taxonomy_term--tags',
++            'id' => $this->term2->uuid(),
+             'attributes' => [
+-              'tid' => (int) $this->term2->id(),
+-              'uuid' => $this->term2->uuid(),
++              $tid_public_name => (int) $this->term2->id(),
+               'name' => $this->term2->label(),
+             ],
+           ],
