@@ -1,0 +1,99 @@
+{
+  "name": "contentacms/contenta_jsonapi",
+  "description": "",
+  "type": "drupal-profile",
+  "authors": [
+  ],
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "license": "GPL-2.0-or-later",
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
+  "extra": {
+    "installer-paths": {
+      "web/core": [
+        "type:drupal-core"
+      ],
+      "web/modules/contrib/{$name}": [
+        "type:drupal-module"
+      ],
+      "web/libraries/{$name}": [
+        "type:drupal-library"
+      ],
+      "web/profiles/contrib/{$name}": [
+        "type:drupal-profile"
+      ],
+      "web/themes/contrib/{$name}": [
+        "type:drupal-theme"
+      ],
+      "drush/contrib/{$name}": [
+        "type:drupal-drush"
+      ]
+    },
+    "patches": {
+      "drupal/openapi": {
+        "Exclude disabled JSON API resources": "https://www.drupal.org/files/issues/2018-09-18/3000458--exclude-disabled-resource-types--2.patch",
+        "Documentation for JSON API collections needs minor adjustments": "https://www.drupal.org/files/issues/2018-09-18/3000609--jsonapi-collections-fixes--2.patch",
+        "Improve path method descriptions": "https://www.drupal.org/files/issues/2018-09-29/3001993--initial-description--7.patch"
+      },
+      "drupal/jsonapi": {
+        "Only serialize sparse_fieldset fields": "https://www.drupal.org/files/issues/2018-11-05/3011099-12-8.x-1.x.patch",
+        "Error: Call to a member function getIncludes() on null": "https://www.drupal.org/files/issues/2018-11-07/getIncludes-on-null-error-3011836-2.patch"
+      }
+    }
+  },
+  "require": {
+    "cweagans/composer-patches": "^1.6.0",
+    "drupal/admin_toolbar": "^1.23",
+    "drupal/consumer_image_styles": "^2.0@rc",
+    "drupal/consumers": "^1.0",
+    "drupal/contentajs": "^1.0@beta",
+    "drupal/core": "^8.6.0",
+    "drupal/decoupled_router": "^1.0",
+    "drupal/dropzonejs": "^2.0@alpha",
+    "drupal/entity_browser": "^2.0@alpha",
+    "drupal/graphql": "^3.0@beta",
+    "drupal/image_widget_crop": "^2.1",
+    "drupal/inline_entity_form": "^1.0@beta",
+    "drupal/jsonapi": "^1.23",
+    "drupal/jsonapi_extras": "^2.9",
+    "drupal/jsonrpc": "^1.0@beta",
+    "drupal/material_admin": "1.x-dev",
+    "drupal/media_entity_browser": "^2.0@alpha",
+    "drupal/openapi": "^1.0@beta",
+    "drupal/schemata": "^1.0@alpha",
+    "drupal/simple_oauth": "^3.3",
+    "drupal/subrequests": "^2.0",
+    "drupal/video_embed_field": "^2.0",
+    "drupal/openapi_ui": "^1.0@rc",
+    "drupal/openapi_ui_redoc": "^1.0@rc"
+  },
+  "config": {
+    "process-timeout": 0
+  },
+  "scripts": {
+    "install-contenta": "scripts/development/build-contenta_jsonapi.sh",
+    "start-contenta": "scripts/development/start-contenta_jsonapi.sh",
+    "ci:helper": "scripts/ci/travis/tests/contenta_ci_tests_helper.sh",
+    "ci:before-deploy": "scripts/ci/travis/before_deploy.sh",
+    "post-package-install": [
+      "Drupal\\Core\\Composer\\Composer::vendorTestCodeCleanup"
+    ],
+    "post-package-update": [
+      "Drupal\\Core\\Composer\\Composer::vendorTestCodeCleanup"
+    ]
+  },
+  "provide": {
+  },
+  "require-dev": {
+    "burdamagazinorg/thunder-dev-tools": "dev-master",
+    "drupal/config_inspector": "1.x-dev",
+    "drupal/coder": "^8.2",
+    "drupal/features": "^3.5",
+    "guzzlehttp/guzzle": "~6.0"
+  }
+}
